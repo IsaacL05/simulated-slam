@@ -3,7 +3,7 @@ import random
 
 # Class representing an autonomous robot in a 2D grid world
 class robot():
-    def __init__(self):
+    def __init__(self, landmarks, start_pos, p_undershoot, p_overshoot):
         # Create a 12x12 grid world of all zeros (empty cells)
         self.map = np.zeros((12, 12), dtype=int)
 
@@ -13,16 +13,14 @@ class robot():
         self.map[:, 0] = 1  # Left border
         self.map[:, -1] = 1  # Right border
 
-        # Choose five random unique cells from interior (non-border) and set them to 2 (obstacles)
-        interior_positions = [(i, j) for i in range(1, 11) for j in range(1, 11)]
-        self.obstacles = random.sample(interior_positions, 5)
+        # Four positions set to 2 (landmarks)
+        self.landmarks = landmarks
 
-        for row, col in self.obstacles:
+        for row, col in self.landmarks:
             self.map[row, col] = 2
 
-        # Pick one more random cell from interior and set it to 3 (robot position)
-        remaining_positions = [pos for pos in interior_positions if pos not in self.obstacles]
-        self.pos = random.choice(remaining_positions)
+        # Set robot position to 3 (robot starts in middle of map)
+        self.pos = start_pos
         self.map[self.pos[0], self.pos[1]] = 3
 
 
@@ -36,25 +34,30 @@ class robot():
         self.pos_belief[:, -1] = 0  # Right border
 
         # Uniform prior over all non-wall positions
-        for row, col in interior_positions:
-            self.pos_belief[row, col] = 0.01
+        for row in range (1, 11):
+            for col in range(1, 11):
+                self.pos_belief[row, col] = 0.01
 
 
-        # Robot's belief distribution over the position of each landmark
-        self.obstacles_belief = []
+        # Robot's belief distribution over the position of landmarks
+        self.landmarks_belief = np.zeros((12, 12))
 
-        for i in range(5):
-            self.obstacles_belief.append(np.zeros((12, 12)))
+        # Set all border cells to 0 (obstacle can't be in a wall)
+        self.landmarks_belief[0, :] = 0  # Top border
+        self.landmarks_belief[-1, :] = 0  # Bottom border
+        self.landmarks_belief[:, 0] = 0  # Left border
+        self.landmarks_belief[:, -1] = 0  # Right border
 
-            # Set all border cells to 0 (obstacle can't be in a wall)
-            self.obstacles_belief[i][0, :] = 0  # Top border
-            self.obstacles_belief[i][-1, :] = 0  # Bottom border
-            self.obstacles_belief[i][:, 0] = 0  # Left border
-            self.obstacles_belief[i][:, -1] = 0  # Right border
+        # Uniform prior over all non-wall positions
+        for row in range (1, 11):
+            for col in range(1, 11):
+                self.landmarks_belief[row, col] = 0.01
 
-            # Uniform prior over all non-wall positions
-            for row, col in interior_positions:
-                self.obstacles_belief[i][row, col] = 0.01
+
+        # Probabilities that a Lidar reading undershoots distance, overshoots distance, or measures correctly
+        self.p_undershoot = p_undershoot
+        self.p_overshoot = p_overshoot
+        self.p_on_target = 1 - p_undershoot - p_overshoot
 
 
     def get_observations(self):
@@ -84,6 +87,16 @@ class robot():
                 break
         observations['S'] = (distance_s, obstacle_type_s)
         
+        # West (decreasing col)
+        distance_w = 0
+        obstacle_type_w = 0
+        for c in range(col - 1, -1, -1):
+            distance_w += 1
+            if self.map[row, c] != 0:
+                obstacle_type_w = self.map[row, c]
+                break
+        observations['W'] = (distance_w, obstacle_type_w)
+
         # East (increasing col)
         distance_e = 0
         obstacle_type_e = 0
@@ -94,24 +107,60 @@ class robot():
                 break
         observations['E'] = (distance_e, obstacle_type_e)
         
-        # West (decreasing col)
-        distance_w = 0
-        obstacle_type_w = 0
-        for c in range(col - 1, -1, -1):
-            distance_w += 1
-            if self.map[row, c] != 0:
-                obstacle_type_w = self.map[row, c]
-                break
-        observations['W'] = (distance_w, obstacle_type_w)
-        
         return observations
 
+    def update(self):
+        observations = self.get_observations()
+        row_est = None
+        col_est = None
+        landmarks = []
+
+        # Lidar observations of walls
+        if observations['N'][1] == 1:
+            row_est = observations['N'][0]
+        if observations['S'][1] == 1:
+            row_est = 11 - observations['S'][0]
+        if observations['W'][1] == 1:
+            col_est = observations['W'][0]
+        if observations['E'][1] == 1:
+            col_est = 11 - observations['E'][0]
+
+        # No noise for now - we're certain the lidars tell us the correct location
+        self.pos_belief[row_est, col_est] = 1
+        for row in range(12):
+            for col in range(12):
+                if row != row_est or col != col_est:
+                    self.pos_belief[row, col] = 0
+
+        # Lidar observations of landmarks
+        if observations['N'][1] == 2:
+            landmarks.append((row_est - observations['N'][0], col_est))
+        if observations['S'][1] == 2:
+            landmarks.append((row_est + observations['S'][0], col_est))
+        if observations['W'][1] == 2:
+            landmarks.append((row_est, col_est - observations['W'][0]))
+        if observations['E'][1] == 2:
+            landmarks.append((row_est, col_est - observations['E'][0]))
+
+        # If landmarks are observed, we assume no noise for now and are certain of their placement
+        if len(landmarks) != 0:
+            for landmark in landmarks:
+                self.landmarks_belief[landmark[0], landmark[1]] = 1/len(landmarks)
+            for row in range(12):
+                for col in range(12):
+                    if (row, col) not in landmarks:
+                        self.landmarks_belief[row, col] = 0
+
 # Display the array
-agent = robot()
+agent = robot([(3, 3), (4, 7), (7, 4), (8, 8)],
+                (7, 7),
+                0.05, 0.05)
 print("12x12 array with borders set to 1, five random interior cells set to 1, and one cell set to 2:")
 print(agent.map)
-print(f"\nInterior obstacles set to 2: {agent.obstacles}")
+print(f"\nInterior landmarks set to 2: {agent.landmarks}")
 print(f"Robot position set to 3: {agent.pos}")
-#print(agent.pos_belief)
-#print(agent.obstacles_belief[0])
-print(agent.get_observations())
+print(agent.pos_belief)
+print(agent.landmarks_belief)
+agent.update()
+print(agent.pos_belief)
+print(agent.landmarks_belief)
