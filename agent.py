@@ -2,7 +2,7 @@ import numpy as np
 
 # Class representing an autonomous agent in a 2D grid world
 class agent():
-    def __init__(self, landmarks, start_pos, p_lidar_off):
+    def __init__(self, landmarks, start_pos, p_stay, p_lidar_off):
         # Create a 10x10 grid world of all zeros (empty cells)
         self.map = np.zeros((10, 10), dtype=int)
 
@@ -14,8 +14,12 @@ class agent():
 
         # Set agent position to 2
         self.pos = start_pos
-        self.map[self.pos[0], self.pos[1]] = 2
+        #self.map[self.pos[0], self.pos[1]] = 2
+        # Previous position
+        self.prev_pos = None
 
+        # Most recent action
+        self.prev_action = None
 
         # Agent's belief distribution over it's position
         self.pos_belief = np.zeros((10, 10))
@@ -35,9 +39,11 @@ class agent():
                 self.landmarks_belief[row, col] = 0.01
 
 
+        #Probability that the agent stays in place when trying to move
+        self.p_stay = p_stay
+
         # Probability that observation from Lidar measurements is 1 tile off (each direction)
         self.p_lidar_off = p_lidar_off
-        self.p_on_target = 1 - 4 * p_lidar_off
 
 
     def get_observations(self):
@@ -89,6 +95,44 @@ class agent():
         
         return observations
 
+    def act(self, direction):
+        """
+        Move the agent in the specified direction with probabilistic behavior.
+        
+        Args:
+            direction: 'N', 'S', 'E', or 'W' for the direction to move
+        
+        With probability p_stay, the agent stays in place.
+        With probability (1 - p_stay), the agent moves in the specified direction.
+        """
+        self.prev_action = direction
+
+        # Generate a random number between 0 and 1
+        random_value = np.random.random()
+        
+        # Probabilistic if statement: stay in place with probability p_stay
+        if random_value < self.p_stay:
+            # Agent stays in place
+            return
+        
+        # Agent moves in the specified direction
+        row, col = self.pos
+        
+        # Store previous position before moving
+        self.prev_pos = (row, col)
+        
+        # Update position based on direction
+        if direction == 'N':
+            row = max(0, row - 1)  # Move north (decrease row)
+        elif direction == 'S':
+            row = min(9, row + 1)  # Move south (increase row)
+        elif direction == 'W':
+            col = max(0, col - 1)  # Move west (decrease col)
+        else:
+            col = min(9, col + 1)  # Move east (increase col)
+        
+        self.pos = (row, col)
+        
     def update(self):
         observations = self.get_observations()
         row_est = None
@@ -130,17 +174,3 @@ class agent():
                 for col in range(10):
                     if (row, col) not in landmarks:
                         self.landmarks_belief[row, col] = 0
-
-# Display the array
-agent  = agent([(2, 2), (3, 6), (6, 3), (7, 7)],
-                (5, 5),
-                0.025)
-print("10x10 array with landmarks set to 2:")
-print(agent.map)
-print(f"\nInterior landmarks set to 2: {agent.landmarks}")
-print(f"Agent position set to 3: {agent.pos}")
-print(agent.pos_belief)
-print(agent.landmarks_belief)
-agent.update()
-print(agent.pos_belief)
-print(agent.landmarks_belief)
