@@ -47,7 +47,7 @@ class agent():
 
 
     def get_observations(self):
-        # Simulated Lidar in 4 cardinal directions
+        # Simulated lidar in 4 cardinal directions
         # First parameter: distance to object
         # Second parameter: type of obstruction (1 = landmark, 0 = empty)
         row, col = self.pos
@@ -96,15 +96,6 @@ class agent():
         return observations
 
     def act(self, direction):
-        """
-        Move the agent in the specified direction with probabilistic behavior.
-        
-        Args:
-            direction: 'N', 'S', 'E', or 'W' for the direction to move
-        
-        With probability p_stay, the agent stays in place.
-        With probability (1 - p_stay), the agent moves in the specified direction.
-        """
         self.prev_action = direction
 
         # Generate a random number between 0 and 1
@@ -118,21 +109,32 @@ class agent():
         # Agent moves in the specified direction
         row, col = self.pos
         
-        # Store previous position before moving
-        self.prev_pos = (row, col)
-        
         # Update position based on direction
         if direction == 'N':
-            row = max(0, row - 1)  # Move north (decrease row)
+            new_row = max(0, row - 1)  # Move north (decrease row)
+            new_col = col
         elif direction == 'S':
-            row = min(9, row + 1)  # Move south (increase row)
+            new_row = min(9, row + 1)  # Move south (increase row)
+            new_col = col
         elif direction == 'W':
-            col = max(0, col - 1)  # Move west (decrease col)
+            new_row = row
+            new_col = max(0, col - 1)  # Move west (decrease col)
         else:
-            col = min(9, col + 1)  # Move east (increase col)
+            new_row = row
+            new_col = min(9, col + 1)  # Move east (increase col)
         
-        self.pos = (row, col)
+        # Check if the target tile is a landmark - if so, don't move
+        if self.map[new_row, new_col] == 1:
+            # Target tile is a landmark, agent stays in place
+            return
         
+        # Store previous position before moving (only if we're actually moving)
+        self.prev_pos = (row, col)
+        
+        # Update position if target tile is not a landmark
+        self.pos = (new_row, new_col)
+        
+
     def update(self):
         observations = self.get_observations()
         row_est = None
