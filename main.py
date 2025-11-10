@@ -16,8 +16,7 @@ def print_estimates(agent):
 
 agent = agent([(2, 2), (3, 6), (6, 3), (7, 7)],
                 (5, 5),
-                0.05,
-                0.1)
+                0.05)
 print("10x10 array with landmarks set to 2:")
 print(agent.map)
 print(f"\nInterior landmarks set to 2: {agent.landmarks}")

@@ -2,7 +2,7 @@ import numpy as np
 
 # Class representing an autonomous agent in a 2D grid world
 class agent():
-    def __init__(self, landmarks, start_pos, p_stay, p_lidar_off):
+    def __init__(self, landmarks, start_pos, p_lidar_off):
         # Create a 10x10 grid world of all zeros (empty cells)
         self.map = np.zeros((10, 10), dtype=int)
 
@@ -21,26 +21,11 @@ class agent():
         # Most recent action
         self.prev_action = None
 
-        # Agent's belief distribution over it's position
-        self.pos_belief = np.zeros((10, 10))
+        # Agent's belief distribution over it's position (uniform prior)
+        self.pos_belief = np.ones((10, 10))/100.0
 
-        # Uniform prior over all positions
-        for row in range (10):
-            for col in range(10):
-                self.pos_belief[row, col] = 0.01
-
-
-        # Agent's belief distribution over the position of landmarks
-        self.landmarks_belief = np.zeros((10, 10))
-
-        # Uniform prior over all positions
-        for row in range (10):
-            for col in range(10):
-                self.landmarks_belief[row, col] = 0.01
-
-
-        #Probability that the agent stays in place when trying to move
-        self.p_stay = p_stay
+        # Agent's belief distribution over the position of landmarks (uniform prior)
+        self.landmarks_belief = np.ones((10, 10))/100.0
 
         # Probability that observation from Lidar measurements is 1 tile off (each direction)
         self.p_lidar_off = p_lidar_off
@@ -97,14 +82,9 @@ class agent():
 
     def act(self, direction):
         self.prev_action = direction
-
-        # Generate a random number between 0 and 1
-        random_value = np.random.random()
         
-        # Probabilistic if statement: stay in place with probability p_stay
-        if random_value < self.p_stay:
-            # Agent stays in place
-            return
+        # Store previous position before moving
+        self.prev_pos = self.pos
         
         # Agent moves in the specified direction
         row, col = self.pos
@@ -127,9 +107,6 @@ class agent():
         if self.map[new_row, new_col] == 1:
             # Target tile is a landmark, agent stays in place
             return
-        
-        # Store previous position before moving (only if we're actually moving)
-        self.prev_pos = (row, col)
         
         # Update position if target tile is not a landmark
         self.pos = (new_row, new_col)
