@@ -112,11 +112,271 @@ class agent():
         self.pos = (new_row, new_col)
         
 
+    def _move_from_state(self, state, action):
+        """
+        Apply the deterministic motion model to a hypothetical agent state.
+
+        Parameters
+        ----------
+        state : tuple[int, int]
+            Candidate `(row, col)` index representing a possible agent location.
+        action : str | None
+            The control that was executed (`'N'`, `'S'`, `'E'`, `'W'`). When `None`
+            (e.g., for the very first update), the state is returned unchanged.
+
+        Returns
+        -------
+        tuple[int, int]
+            The successor grid coordinate after applying the control. If the move
+            would collide with a landmark, or the control is `None`, the original
+            state is returned.
+        """
+        if action is None:
+            return state
+        row, col = state
+        dr, dc = self._direction_vector(action)
+        new_row = np.clip(row + dr, 0, 9)
+        new_col = np.clip(col + dc, 0, 9)
+        if self.map[new_row, new_col] == 1:
+            return state
+        return (new_row, new_col)
+
+    def _predict_position_belief(self, prior_belief):
+        """
+        Propagate the prior position belief through the transition model.
+
+        Implements the ∑_s T(s' | s, a) b(s) portion of the Bayes filter by
+        pushing each prior mass element through `_move_from_state` and
+        accumulating it at the resulting successor cell.
+        """
+        if self.prev_action is None:
+            return prior_belief.copy()
+        predicted = np.zeros_like(prior_belief)
+        for row in range(10):
+            for col in range(10):
+                next_row, next_col = self._move_from_state((row, col), self.prev_action)
+                predicted[next_row, next_col] += prior_belief[row, col]
+        return predicted
+
+    def _axis_measurement_prob(self, actual_idx, measured_idx):
+        """
+        Return P(measured_idx | actual_idx) for one grid axis under the ±1 lidar noise model.
+
+        In the nominal case the reading is centered on the true index with probability
+        (1 - 2 p_lidar_off) and shifts left/right by one cell with probability
+        p_lidar_off each. If either offset would leave the grid, its mass is folded
+        back into the on-grid reading so the total probability remains 1.
+        """
+        if measured_idx is None:
+            return 1.0
+        prob_correct = 1.0 - 2.0 * self.p_lidar_off
+        prob_minus = self.p_lidar_off
+        prob_plus = self.p_lidar_off
+
+        minus_idx = actual_idx - 1
+        plus_idx = actual_idx + 1
+
+        if minus_idx < 0:
+            prob_correct += prob_minus
+            prob_minus = 0.0
+        if plus_idx >= 10:
+            prob_correct += prob_plus
+            prob_plus = 0.0
+
+        probability_map = {actual_idx: prob_correct}
+        if prob_minus > 0.0:
+            probability_map[minus_idx] = prob_minus
+        if prob_plus > 0.0:
+            probability_map[plus_idx] = prob_plus
+        return probability_map.get(measured_idx, 0.0)
+
+    def _compute_position_likelihood(self, row_est, col_est):
+        """
+        Build the observation likelihood for every grid cell based on noisy wall range readings.
+
+        Each candidate cell `(row, col)` is weighted by the product of the independent
+        row and column measurement probabilities returned by `_axis_measurement_prob`.
+        Missing measurements (i.e., `None`) behave as uninformative factors equal to 1.
+        """
+        likelihood = np.ones((10, 10))
+        if row_est is not None:
+            for row in range(10):
+                likelihood[row, :] *= self._axis_measurement_prob(row, row_est)
+        if col_est is not None:
+            for col in range(10):
+                likelihood[:, col] *= self._axis_measurement_prob(col, col_est)
+        return likelihood
+
+    def _direction_vector(self, direction):
+        """
+        Map a cardinal action to its `(Δrow, Δcol)` displacement.
+
+        Returns `(0, 0)` when the action is unrecognized so callers can safely
+        fall back to a no-op move.
+        """
+        if direction == 'N':
+            return -1, 0
+        if direction == 'S':
+            return 1, 0
+        if direction == 'W':
+            return 0, -1
+        if direction == 'E':
+            return 0, 1
+        return 0, 0
+
+    def _project(self, state, direction, distance):
+        """
+        Project a grid state forward by `distance` cells in `direction`.
+
+        Unlike `_move_from_state`, this helper ignores collisions; callers must
+        clamp or validate the result as needed.
+        """
+        row, col = state
+        dr, dc = self._direction_vector(direction)
+        return row + dr * distance, col + dc * distance
+
+    def _is_within_grid(self, row, col):
+        """Return True if the coordinates fall inside the 10x10 grid."""
+        return 0 <= row < 10 and 0 <= col < 10
+
+    def _landmark_aligned(self, state, landmark, direction):
+        """
+        Check whether the landmark lies along the ray cast from `state` in `direction`.
+
+        The ray model assumes Manhattan-aligned scanning, so only cells that share
+        the same row or column (and are "ahead" of the state) can be detected.
+        """
+        row, col = state
+        l_row, l_col = landmark
+        if direction == 'N':
+            return l_col == col and l_row < row
+        if direction == 'S':
+            return l_col == col and l_row > row
+        if direction == 'W':
+            return l_row == row and l_col < col
+        if direction == 'E':
+            return l_row == row and l_col > col
+        return False
+
+    def _landmark_distance(self, state, landmark, direction):
+        """
+        Return the true distance to the landmark when it is aligned with the given ray.
+
+        When the landmark is not visible in that direction, the helper returns `None`
+        so that callers can short-circuit the likelihood computation.
+        """
+        if not self._landmark_aligned(state, landmark, direction):
+            return None
+        row, col = state
+        l_row, l_col = landmark
+        if direction in ('N', 'S'):
+            return abs(row - l_row)
+        if direction in ('W', 'E'):
+            return abs(col - l_col)
+        return None
+
+    def _offset_out_of_bounds(self, state, direction, distance):
+        """
+        Indicate whether shifting the measurement by one more cell would leave the grid.
+
+        Used to fold the one-sided `p_lidar_off` mass back onto the true range when the
+        hypothetical over-estimate would cross the boundary.
+        """
+        target_row, target_col = self._project(state, direction, distance)
+        return not self._is_within_grid(target_row, target_col)
+
+    def _landmark_direction_likelihood(self, state, landmark, direction, observation):
+        """
+        Observation likelihood for a single direction given a candidate agent and landmark state.
+
+        This captures the symmetric ±1 noise model for landmarks:
+        - When a landmark is seen (`obs_type == 1`), the reported cell is the one located
+          `distance` steps along `direction` from the agent. That cell receives weight
+          `(1 - 2 p_lidar_off)` while its immediate neighbors along the same axis (±1 cell)
+          receive `p_lidar_off` each. Off-grid neighbors fold their mass back to the
+          reported cell.
+        - When no landmark is detected (`obs_type == 0`), any candidate landmark that would
+          have appeared within the reported empty distance is considered impossible.
+        """
+        distance, obs_type = observation
+        if obs_type == 1:
+            dr, dc = self._direction_vector(direction)
+            expected = self._project(state, direction, distance)
+            if not self._is_within_grid(*expected):
+                return 0.0
+
+            prob_correct = 1.0 - 2.0 * self.p_lidar_off
+            prob_minus = self.p_lidar_off
+            prob_plus = self.p_lidar_off
+
+            minus_cell = (expected[0] - dr, expected[1] - dc)
+            plus_cell = (expected[0] + dr, expected[1] + dc)
+
+            if not self._is_within_grid(*minus_cell):
+                prob_correct += prob_minus
+                prob_minus = 0.0
+            if not self._is_within_grid(*plus_cell):
+                prob_correct += prob_plus
+                prob_plus = 0.0
+
+            if landmark == expected:
+                return prob_correct
+            if prob_minus > 0.0 and landmark == minus_cell:
+                return prob_minus
+            if prob_plus > 0.0 and landmark == plus_cell:
+                return prob_plus
+            return 0.0
+        else:
+            if not self._landmark_aligned(state, landmark, direction):
+                return 1.0
+            true_distance = self._landmark_distance(state, landmark, direction)
+            if true_distance is None:
+                return 1.0
+            if true_distance <= distance:
+                return 0.0
+            return 1.0
+
+    def _compute_landmark_likelihood(self, observations, state):
+        """
+        Evaluate landmark likelihoods assuming the agent occupies `state`.
+
+        For each candidate landmark location `l'`, this reduces to
+
+            O_L(o | s*, l') = Σ_{d ∈ {N,S,E,W}} P(o_d | s*, l', d)
+
+        while discarding candidates that contradict an empty-beam observation.
+        The sum reflects that independent directional detections may correspond
+        to distinct physical landmarks.
+        """
+        likelihood = np.zeros((10, 10))
+        for l_row in range(10):
+            for l_col in range(10):
+                cumulative_support = 0.0
+                ruled_out = False
+                for direction, observation in observations.items():
+                    directional_prob = self._landmark_direction_likelihood(
+                        state, (l_row, l_col), direction, observation
+                    )
+                    distance, obs_type = observation
+                    if obs_type == 0:
+                        if directional_prob == 0.0:
+                            ruled_out = True
+                            break
+                        continue
+                    # obs_type == 1: accumulate evidence from this direction
+                    cumulative_support += directional_prob
+                if ruled_out:
+                    likelihood[l_row, l_col] = 0.0
+                else:
+                    # For all states for which their is no evidence either way, we give them a probability 1/96
+                    # since there are 96 unique sets of observations that could have been made for a given state.
+                    likelihood[l_row, l_col] = cumulative_support if cumulative_support > 0.0 else 1.0/96
+        return likelihood
+
     def update(self):
         observations = self.get_observations()
         row_est = None
         col_est = None
-        landmarks = []
 
         # Lidar observations of walls
         if observations['N'][1] == 0:
@@ -128,28 +388,22 @@ class agent():
         if observations['E'][1] == 0:
             col_est = 9 - observations['E'][0]
 
-        # No noise for now - we're certain the lidars tell us the correct location
-        self.pos_belief[row_est, col_est] = 1
-        for row in range(10):
-            for col in range(10):
-                if row != row_est or col != col_est:
-                    self.pos_belief[row, col] = 0
+        # Bayes filter for pose: b'(s') propto O(o | a, s') * sum_s T(s' | s, a) b(s)
+        # (eta, the normalizer, is applied by the division below).
+        prior_pos_belief = self.pos_belief.copy()
+        predicted_pos_belief = self._predict_position_belief(prior_pos_belief)
+        pos_likelihood = self._compute_position_likelihood(row_est, col_est)
+        updated_pos_belief = predicted_pos_belief * pos_likelihood
+        total_pos_prob = np.sum(updated_pos_belief)
+        if total_pos_prob > 0:
+            self.pos_belief = updated_pos_belief / total_pos_prob
+        else:
+            self.pos_belief = predicted_pos_belief
 
-        # Lidar observations of landmarks
-        if observations['N'][1] == 1:
-            landmarks.append((row_est - observations['N'][0], col_est))
-        if observations['S'][1] == 1:
-            landmarks.append((row_est + observations['S'][0], col_est))
-        if observations['W'][1] == 1:
-            landmarks.append((row_est, col_est - observations['W'][0]))
-        if observations['E'][1] == 1:
-            landmarks.append((row_est, col_est - observations['E'][0]))
-
-        # If landmarks are observed, we assume no noise for now and are certain of their placement
-        if len(landmarks) != 0:
-            for landmark in landmarks:
-                self.landmarks_belief[landmark[0], landmark[1]] = 1/len(landmarks)
-            for row in range(10):
-                for col in range(10):
-                    if (row, col) not in landmarks:
-                        self.landmarks_belief[row, col] = 0
+        # Landmark belief: approximate b_L'(l') propto O_L(o | s*, l') * b_L(l') with s* = argmax_s b'(s).
+        most_likely_state = np.unravel_index(np.argmax(self.pos_belief), self.pos_belief.shape)
+        landmark_likelihood = self._compute_landmark_likelihood(observations, most_likely_state)
+        updated_landmark_belief = self.landmarks_belief * landmark_likelihood
+        total_landmark_prob = np.sum(updated_landmark_belief)
+        if total_landmark_prob > 0:
+            self.landmarks_belief = updated_landmark_belief / total_landmark_prob

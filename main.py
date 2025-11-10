@@ -24,8 +24,10 @@ print(f"Agent position set to 3: {agent.pos}")
 print_estimates(agent)
 agent.update()
 print_estimates(agent)
+print(agent.landmarks_belief)
 
-for i in range(100):
+
+for i in range(1000):
     random_value = np.random.random()
 
     if random_value < 0.25:
