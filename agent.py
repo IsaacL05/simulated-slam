@@ -177,14 +177,18 @@ class agent():
         plus_idx = actual_idx + 1
 
         if minus_idx < 0:
+            # The -1 offset would leave the grid, so its probability mass is
+            # reassigned to the on-target reading to keep the distribution normalized.
             prob_correct += prob_minus
             prob_minus = 0.0
         if plus_idx >= 10:
+            # Likewise fold the +1 mass back when the ray would overshoot the grid.
             prob_correct += prob_plus
             prob_plus = 0.0
 
         probability_map = {actual_idx: prob_correct}
         if prob_minus > 0.0:
+            # Only store side-offset probabilities when the corresponding cells exist.
             probability_map[minus_idx] = prob_minus
         if prob_plus > 0.0:
             probability_map[plus_idx] = prob_plus
@@ -201,9 +205,13 @@ class agent():
         likelihood = np.ones((10, 10))
         if row_est is not None:
             for row in range(10):
+                # Multiply each row slice by the 1D likelihood for the measured row
+                # distance. Columns remain untouched because the axes factorize.
                 likelihood[row, :] *= self._axis_measurement_prob(row, row_est)
         if col_est is not None:
             for col in range(10):
+                # Mirror the same reasoning for the column dimension so that the
+                # resulting grid encodes the product of independent axis beliefs.
                 likelihood[:, col] *= self._axis_measurement_prob(col, col_est)
         return likelihood
 
@@ -304,7 +312,16 @@ class agent():
             expected = self._project(state, direction, distance)
             if not self._is_within_grid(*expected):
                 return 0.0
+            if not self._landmark_aligned(state, landmark, direction):
+                return 0.0
+            true_distance = self._landmark_distance(state, landmark, direction)
+            if true_distance is None:
+                return 0.0
 
+            # Spread the detection's mass across the reported cell and its ±1
+            # neighbors to represent range noise. Landmarks further down the ray
+            # become "uninformative" (weight 1.0) so that detecting a nearer
+            # landmark does not automatically eliminate them.
             prob_correct = 1.0 - 2.0 * self.p_lidar_off
             prob_minus = self.p_lidar_off
             prob_plus = self.p_lidar_off
@@ -319,6 +336,8 @@ class agent():
                 prob_correct += prob_plus
                 prob_plus = 0.0
 
+            if true_distance > distance + 1:
+                return 1.0
             if landmark == expected:
                 return prob_correct
             if prob_minus > 0.0 and landmark == minus_cell:
@@ -328,11 +347,15 @@ class agent():
             return 0.0
         else:
             if not self._landmark_aligned(state, landmark, direction):
+                # A missed detection offers no information about off-ray cells,
+                # so their likelihood contribution remains neutral.
                 return 1.0
             true_distance = self._landmark_distance(state, landmark, direction)
             if true_distance is None:
                 return 1.0
             if true_distance <= distance:
+                # The beam reported empty space up to `distance`; any landmark that
+                # would have appeared before that distance is inconsistent.
                 return 0.0
             return 1.0
 
@@ -354,6 +377,9 @@ class agent():
                 cumulative_support = 0.0
                 ruled_out = False
                 for direction, observation in observations.items():
+                    # Evaluate how this candidate aligns with each beam. The helper
+                    # returns either a probability mass (for detections), 0 when the
+                    # candidate contradicts the observation, or 1 for neutral evidence.
                     directional_prob = self._landmark_direction_likelihood(
                         state, (l_row, l_col), direction, observation
                     )
@@ -368,9 +394,10 @@ class agent():
                 if ruled_out:
                     likelihood[l_row, l_col] = 0.0
                 else:
-                    # For all states for which their is no evidence either way, we give them a probability 1/96
-                    # since there are 96 unique sets of observations that could have been made for a given state.
-                    likelihood[l_row, l_col] = cumulative_support if cumulative_support > 0.0 else 1.0/96
+                    # For all states for which their is no evidence either way, we give them a probability 1
+                    # Landmarks that never receive positive support fall back to this
+                    # neutral baseline, ensuring they stay in play for future updates.
+                    likelihood[l_row, l_col] = cumulative_support if cumulative_support > 0.0 else 1.0
         return likelihood
 
     def update(self):
@@ -407,3 +434,16 @@ class agent():
         total_landmark_prob = np.sum(updated_landmark_belief)
         if total_landmark_prob > 0:
             self.landmarks_belief = updated_landmark_belief / total_landmark_prob
+
+    def reward(self):
+        actual_agent = np.zeros_like(self.pos_belief, dtype=float)
+        actual_agent[self.pos] = 1.0
+
+        agent_diff = (self.pos_belief - actual_agent)
+        agent_error = np.sum(agent_diff ** 2)
+
+        actual_landmarks = (self.map == 1).astype(float) * 0.25
+        landmark_diff = (self.landmarks_belief - actual_landmarks)
+        landmark_error = np.sum(landmark_diff ** 2)
+
+        return -(agent_error + landmark_error)

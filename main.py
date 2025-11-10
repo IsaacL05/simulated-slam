@@ -22,9 +22,10 @@ print(agent.map)
 print(f"\nInterior landmarks set to 2: {agent.landmarks}")
 print(f"Agent position set to 3: {agent.pos}")
 print_estimates(agent)
+print(agent.reward())
 agent.update()
 print_estimates(agent)
-print(agent.landmarks_belief)
+print(agent.reward())
 
 
 for i in range(1000):
@@ -42,3 +43,8 @@ for i in range(1000):
     agent.update()
 
     print_estimates(agent)
+    print(agent.reward())
+
+print_estimates(agent)
+print(agent.pos_belief)
+print(agent.landmarks_belief)
