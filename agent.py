@@ -408,6 +408,8 @@ class agent():
                     # Landmarks that never receive positive support fall back to this
                     # neutral baseline, ensuring they stay in play for future updates.
                     likelihood[l_row, l_col] = cumulative_support if cumulative_support > 0.0 else 1.0
+        # A landmark cannot be at the same location as the agent
+        likelihood[state[0], state[1]] = 0.0
         return likelihood
 
     def update(self):

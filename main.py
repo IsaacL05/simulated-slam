@@ -77,8 +77,10 @@ def visualize_likelihood(likelihood):
     fig, ax = plt.subplots(figsize=(8, 8))
     
     # Use grayscale colormap (darker = higher probability)
+    # Fix scale so 0 = white and 1 = black regardless of data range
     im = ax.imshow(likelihood, cmap='gray_r', aspect='equal', 
-                   extent=[-0.5, 9.5, 9.5, -0.5], interpolation='nearest')
+                   extent=[-0.5, 9.5, 9.5, -0.5], interpolation='nearest',
+                   vmin=0, vmax=1)
     
     # Add grid lines
     ax.set_xticks(np.arange(-0.5, 10, 1), minor=True)
@@ -101,8 +103,8 @@ def visualize_likelihood(likelihood):
     for row in range(10):
         for col in range(10):
             value = likelihood[row, col]
-            # Use white text for darker cells, black for lighter cells
-            text_color = 'white' if value > likelihood.max() / 2 else 'black'
+            # Use white text for darker cells (value > 0.5), black for lighter cells
+            text_color = 'white' if value > 0.5 else 'black'
             ax.text(col, row, f'{value:.3f}', ha='center', va='center', 
                    fontsize=10, color=text_color, weight='bold')
     
