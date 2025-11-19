@@ -336,6 +336,11 @@ class agent():
                 prob_correct += prob_plus
                 prob_plus = 0.0
 
+            # If the landmark is closer than distance - 1, it should be impossible
+            # (since we detected a landmark at distance, and landmarks at distance-1
+            # are possible due to noise, but anything closer is impossible)
+            if true_distance < distance - 1:
+                return 0.0
             if true_distance > distance + 1:
                 return 1.0
             if landmark == expected:
@@ -390,6 +395,11 @@ class agent():
                             break
                         continue
                     # obs_type == 1: accumulate evidence from this direction
+                    # If the cell is aligned with this direction and directional_prob is 0.0,
+                    # it means the cell is too close (impossible), so rule it out
+                    if self._landmark_aligned(state, (l_row, l_col), direction) and directional_prob == 0.0:
+                        ruled_out = True
+                        break
                     cumulative_support += directional_prob
                 if ruled_out:
                     likelihood[l_row, l_col] = 0.0
@@ -420,6 +430,7 @@ class agent():
         prior_pos_belief = self.pos_belief.copy()
         predicted_pos_belief = self._predict_position_belief(prior_pos_belief)
         pos_likelihood = self._compute_position_likelihood(row_est, col_est)
+        self.pos_likelihood = pos_likelihood  # Store for visualization
         updated_pos_belief = predicted_pos_belief * pos_likelihood
         total_pos_prob = np.sum(updated_pos_belief)
         if total_pos_prob > 0:
@@ -430,6 +441,7 @@ class agent():
         # Landmark belief: approximate b_L'(l') propto O_L(o | s*, l') * b_L(l') with s* = argmax_s b'(s).
         most_likely_state = np.unravel_index(np.argmax(self.pos_belief), self.pos_belief.shape)
         landmark_likelihood = self._compute_landmark_likelihood(observations, most_likely_state)
+        self.landmark_likelihood = landmark_likelihood  # Store for visualization
         updated_landmark_belief = self.landmarks_belief * landmark_likelihood
         total_landmark_prob = np.sum(updated_landmark_belief)
         if total_landmark_prob > 0:
