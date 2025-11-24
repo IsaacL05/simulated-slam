@@ -114,7 +114,9 @@ def visualize_likelihood(likelihood):
 if __name__ == "__main__":
     # Environment setup
     landmarks = [(2, 2), (3, 6), (6, 3), (7, 7)]
-    start_pos = (6, 6)
+    # Generate all valid positions (0-9, 0-9) excluding landmarks
+    valid_positions = [(r, c) for r in range(10) for c in range(10) if (r, c) not in landmarks]
+    start_pos = tuple(valid_positions[np.random.randint(len(valid_positions))])
     p_lidar_off = 0.1
 
     # Planning hyperparameters
