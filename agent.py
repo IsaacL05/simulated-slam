@@ -2,7 +2,7 @@ import numpy as np
 
 # Class representing an autonomous agent in a 2D grid world
 class agent():
-    def __init__(self, landmarks, start_pos, p_lidar_off):
+    def __init__(self, landmarks, start_pos, p_lidar_off, num_rollouts=10, horizon=10, gamma=0.95):
         # Create a 10x10 grid world of all zeros (empty cells)
         self.map = np.zeros((10, 10), dtype=int)
 
@@ -30,6 +30,134 @@ class agent():
         # Probability that observation from Lidar measurements is 1 tile off (each direction)
         self.p_lidar_off = p_lidar_off
 
+        # Track if the last action resulted in a collision
+        self.collision_occurred = False
+
+        # Planning hyperparameters
+        self.num_rollouts = num_rollouts  # K: number of rollouts per action
+        self.horizon = horizon              # H: lookahead horizon
+        self.gamma = gamma                  # Discount factor for future rewards
+
+    def _save_state(self):
+        """Save current agent state for simulation."""
+        return {
+            'pos': self.pos,
+            'prev_pos': self.prev_pos,
+            'prev_action': self.prev_action,
+            'pos_belief': self.pos_belief.copy(),
+            'landmarks_belief': self.landmarks_belief.copy(),
+            'collision_occurred': self.collision_occurred
+        }
+
+    def _restore_state(self, state):
+        """Restore agent state from saved snapshot."""
+        self.pos = state['pos']
+        self.prev_pos = state['prev_pos']
+        self.prev_action = state['prev_action']
+        self.pos_belief = state['pos_belief'].copy()
+        self.landmarks_belief = state['landmarks_belief'].copy()
+        self.collision_occurred = state['collision_occurred']
+
+    def _sample_position(self):
+        """Sample a position from the current position belief distribution."""
+        # Flatten the belief distribution
+        flat_belief = self.pos_belief.flatten()
+
+        # Normalize to ensure it's a valid probability distribution
+        flat_belief = flat_belief / np.sum(flat_belief)
+
+        # Sample an index according to the probability distribution
+        sampled_idx = np.random.choice(len(flat_belief), p=flat_belief)
+
+        # Convert flat index back to (row, col)
+        sampled_pos = np.unravel_index(sampled_idx, self.pos_belief.shape)
+
+        return sampled_pos
+
+    def _simulate_step(self, action, collision_penalty=1.0, update_beliefs=False):
+        """
+        Simulate taking an action.
+
+        The agent's position should already be set (either to actual position or sampled position).
+        This method takes an action from that position and returns the reward.
+
+        Parameters:
+        - update_beliefs: If True, update beliefs based on observations (used for real actions).
+                         If False, only simulate movement (used during planning rollouts).
+
+        Returns the reward after taking the action.
+        """
+        # Take the action (this updates self.pos and collision_occurred)
+        self.act(action)
+
+        # Optionally update beliefs based on new observations
+        if update_beliefs:
+            self.update()
+
+        # Return the reward (compares current beliefs to simulated position)
+        return self.reward(collision_penalty)
+
+    def _evaluate_action(self, action, collision_penalty=1.0):
+        """
+        Evaluate an action by running K rollouts and averaging the cumulative rewards.
+
+        For each rollout:
+        1. Sample ONE position from current belief (one hypothesis about where we are)
+        2. Simulate forward from that position WITH belief updates
+        3. Take the specified action as first step, then H-1 random steps
+        4. Accumulate discounted rewards
+
+        Returns the average cumulative reward across K rollouts.
+        """
+        rewards = []
+
+        for _ in range(self.num_rollouts):
+            # Save current state before rollout
+            saved_state = self._save_state()
+
+            # Sample ONE starting position for this rollout (one hypothesis about where we are)
+            sampled_pos = self._sample_position()
+            self.pos = sampled_pos
+
+            # First step: take the specified action WITH belief update
+            reward = self._simulate_step(action, collision_penalty, update_beliefs=True)
+            total_reward = reward
+
+            # Remaining H-1 steps: random actions WITH belief updates
+            actions = ['N', 'S', 'E', 'W']
+            for t in range(1, self.horizon):
+                random_action = np.random.choice(actions)
+                reward = self._simulate_step(random_action, collision_penalty, update_beliefs=True)
+                total_reward += (self.gamma ** t) * reward
+
+            rewards.append(total_reward)
+
+            # Restore state for next rollout
+            self._restore_state(saved_state)
+
+        # Return average reward across all rollouts
+        return np.mean(rewards)
+
+    def plan(self, collision_penalty=1.0):
+        """
+        Plan the best action using online lookahead with rollouts.
+
+        Evaluates all 4 possible actions (N, S, E, W) by running K rollouts
+        for each action and returns the action with the highest expected value.
+
+        Returns the action with the highest average cumulative reward.
+        """
+        actions = ['N', 'S', 'E', 'W']
+        action_values = {}
+
+        # Evaluate each action
+        for action in actions:
+            action_values[action] = self._evaluate_action(action, collision_penalty)
+
+        # Return the action with the highest value
+        best_action = max(action_values, key=action_values.get)
+
+        return best_action
 
     def get_observations(self):
         # Simulated lidar in 4 cardinal directions
@@ -82,13 +210,13 @@ class agent():
 
     def act(self, direction):
         self.prev_action = direction
-        
+
         # Store previous position before moving
         self.prev_pos = self.pos
-        
+
         # Agent moves in the specified direction
         row, col = self.pos
-        
+
         # Update position based on direction
         if direction == 'N':
             new_row = max(0, row - 1)  # Move north (decrease row)
@@ -102,14 +230,16 @@ class agent():
         else:
             new_row = row
             new_col = min(9, col + 1)  # Move east (increase col)
-        
+
         # Check if the target tile is a landmark - if so, don't move
         if self.map[new_row, new_col] == 1:
             # Target tile is a landmark, agent stays in place
+            self.collision_occurred = True
             return
-        
+
         # Update position if target tile is not a landmark
         self.pos = (new_row, new_col)
+        self.collision_occurred = False
         
 
     def _move_from_state(self, state, action):
@@ -449,7 +579,7 @@ class agent():
         if total_landmark_prob > 0:
             self.landmarks_belief = updated_landmark_belief / total_landmark_prob
 
-    def reward(self):
+    def reward(self, collision_penalty=1.0):
         actual_agent = np.zeros_like(self.pos_belief, dtype=float)
         actual_agent[self.pos] = 1.0
 
@@ -460,4 +590,7 @@ class agent():
         landmark_diff = (self.landmarks_belief - actual_landmarks)
         landmark_error = np.sum(landmark_diff ** 2)
 
-        return -(agent_error + landmark_error)
+        # Apply penalty if a collision occurred
+        penalty = collision_penalty if self.collision_occurred else 0.0
+
+        return -(agent_error + landmark_error + penalty)
