@@ -22,10 +22,12 @@ class agent():
         self.prev_action = None
 
         # Agent's belief distribution over it's position (uniform prior)
-        self.pos_belief = np.ones((10, 10))/100.0
+        # Multiply by 100 to avoid floating point issues
+        self.pos_belief = np.ones((10, 10))
 
         # Agent's belief distribution over the position of landmarks (uniform prior)
-        self.landmarks_belief = np.ones((10, 10))/100.0
+        # Multiply by 100 to avoid floating point issues
+        self.landmarks_belief = np.ones((10, 10))
 
         # Probability that observation from Lidar measurements is 1 tile off (each direction)
         self.p_lidar_off = p_lidar_off
@@ -147,12 +149,18 @@ class agent():
 
         Returns the action with the highest average cumulative reward.
         """
+        # Save state before planning to ensure we can restore it afterward
+        saved_state = self._save_state()
+        
         actions = ['N', 'S', 'E', 'W']
         action_values = {}
 
         # Evaluate each action
         for action in actions:
             action_values[action] = self._evaluate_action(action, collision_penalty)
+
+        # Restore state after planning to ensure agent's state and beliefs are unchanged
+        self._restore_state(saved_state)
 
         # Return the action with the highest value
         best_action = max(action_values, key=action_values.get)
@@ -559,6 +567,7 @@ class agent():
 
         # Bayes filter for pose: b'(s') propto O(o | a, s') * sum_s T(s' | s, a) b(s)
         # (eta, the normalizer, is applied by the division below).
+        # Beliefs are scaled by 100 to avoid floating point issues, so we normalize to sum to 100.
         prior_pos_belief = self.pos_belief.copy()
         predicted_pos_belief = self._predict_position_belief(prior_pos_belief)
         pos_likelihood = self._compute_position_likelihood(row_est, col_est)
@@ -566,27 +575,30 @@ class agent():
         updated_pos_belief = predicted_pos_belief * pos_likelihood
         total_pos_prob = np.sum(updated_pos_belief)
         if total_pos_prob > 0:
-            self.pos_belief = updated_pos_belief / total_pos_prob
+            self.pos_belief = updated_pos_belief / total_pos_prob * 100.0
         else:
             self.pos_belief = predicted_pos_belief
 
         # Landmark belief: approximate b_L'(l') propto O_L(o | s*, l') * b_L(l') with s* = argmax_s b'(s).
+        # Beliefs are scaled by 100 to avoid floating point issues, so we normalize to sum to 100.
         most_likely_state = np.unravel_index(np.argmax(self.pos_belief), self.pos_belief.shape)
         landmark_likelihood = self._compute_landmark_likelihood(observations, most_likely_state)
         self.landmark_likelihood = landmark_likelihood  # Store for visualization
         updated_landmark_belief = self.landmarks_belief * landmark_likelihood
         total_landmark_prob = np.sum(updated_landmark_belief)
         if total_landmark_prob > 0:
-            self.landmarks_belief = updated_landmark_belief / total_landmark_prob
+            self.landmarks_belief = updated_landmark_belief / total_landmark_prob * 100.0
 
     def reward(self, collision_penalty=1.0):
+        # Beliefs are scaled by 100, so perfect belief would be 100 at agent position
         actual_agent = np.zeros_like(self.pos_belief, dtype=float)
-        actual_agent[self.pos] = 1.0
+        actual_agent[self.pos] = 100.0
 
         agent_diff = (self.pos_belief - actual_agent)
         agent_error = np.sum(agent_diff ** 2)
 
-        actual_landmarks = (self.map == 1).astype(float) * 0.25
+        # Beliefs are scaled by 100, so perfect belief would be 25 at each landmark (25/100 = 0.25)
+        actual_landmarks = (self.map == 1).astype(float) * 25.0
         landmark_diff = (self.landmarks_belief - actual_landmarks)
         landmark_error = np.sum(landmark_diff ** 2)
 

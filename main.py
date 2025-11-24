@@ -1,3 +1,4 @@
+from numpy.random import random_sample
 from agent import agent
 from policies import planning_policy, random_policy
 from evaluation import run_episode, compare_policies, print_comparison
@@ -187,5 +188,5 @@ if __name__ == "__main__":
     print(f"Episode collisions: {episode_result['collisions']}")
 
     visualize_grid(vis_agent)
-    visualize_likelihood(vis_agent.pos_belief)
-    visualize_likelihood(vis_agent.landmarks_belief)
+    visualize_likelihood(vis_agent.pos_belief/100)
+    visualize_likelihood(vis_agent.landmarks_belief/100)
