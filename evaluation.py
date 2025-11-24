@@ -41,14 +41,18 @@ def run_episode(agent, policy_fn, num_steps, collision_penalty=1.0, verbose=Fals
             print(f"Step {step + 1}/{num_steps}: reward = {reward:.4f}")
 
     # Calculate final belief errors
+    # Only compute error at agent position and four landmark positions
     # Beliefs are scaled by 100, so perfect belief would be 100 at agent position
-    actual_agent = np.zeros_like(agent.pos_belief, dtype=float)
-    actual_agent[agent.pos] = 100.0
-    final_pos_error = np.sum((agent.pos_belief - actual_agent) ** 2)
+    agent_pos_belief = agent.pos_belief[agent.pos[0], agent.pos[1]]
+    agent_actual = 100.0
+    final_pos_error = (agent_pos_belief - agent_actual) ** 2
 
     # Beliefs are scaled by 100, so perfect belief would be 25 at each landmark (25/100 = 0.25)
-    actual_landmarks = (agent.map == 1).astype(float) * 25.0
-    final_landmark_error = np.sum((agent.landmarks_belief - actual_landmarks) ** 2)
+    final_landmark_error = 0.0
+    landmark_actual = 25.0  # Each landmark has probability 0.25 (1/4), scaled by 100 = 25
+    for landmark_row, landmark_col in agent.landmarks:
+        landmark_pos_belief = agent.landmarks_belief[landmark_row, landmark_col]
+        final_landmark_error += (landmark_pos_belief - landmark_actual) ** 2
 
     return {
         'total_reward': sum(rewards),

@@ -1,4 +1,3 @@
-from numpy.random import random_sample
 from agent import agent
 from policies import planning_policy, random_policy
 from evaluation import run_episode, compare_policies, print_comparison

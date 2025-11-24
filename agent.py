@@ -590,17 +590,21 @@ class agent():
             self.landmarks_belief = updated_landmark_belief / total_landmark_prob * 100.0
 
     def reward(self, collision_penalty=1.0):
+        # Agent error: only compute at the agent's actual position
         # Beliefs are scaled by 100, so perfect belief would be 100 at agent position
-        actual_agent = np.zeros_like(self.pos_belief, dtype=float)
-        actual_agent[self.pos] = 100.0
+        agent_pos_belief = self.pos_belief[self.pos[0], self.pos[1]]
+        agent_actual = 100.0
+        agent_diff = (agent_pos_belief - agent_actual)
+        agent_error = agent_diff ** 2
 
-        agent_diff = (self.pos_belief - actual_agent)
-        agent_error = np.sum(agent_diff ** 2)
-
+        # Landmark error: only compute at the four landmark positions
         # Beliefs are scaled by 100, so perfect belief would be 25 at each landmark (25/100 = 0.25)
-        actual_landmarks = (self.map == 1).astype(float) * 25.0
-        landmark_diff = (self.landmarks_belief - actual_landmarks)
-        landmark_error = np.sum(landmark_diff ** 2)
+        landmark_error = 0.0
+        landmark_actual = 25.0  # Each landmark has probability 0.25 (1/4), scaled by 100 = 25
+        for landmark_row, landmark_col in self.landmarks:
+            landmark_pos_belief = self.landmarks_belief[landmark_row, landmark_col]
+            landmark_diff = (landmark_pos_belief - landmark_actual)
+            landmark_error += landmark_diff ** 2
 
         # Apply penalty if a collision occurred
         penalty = collision_penalty if self.collision_occurred else 0.0
