@@ -175,14 +175,15 @@ if __name__ == "__main__":
     print_estimates(vis_agent)
     print(f"Initial reward: {vis_agent.reward(collision_penalty)}")
 
-    # Run a few steps
-    print("\nRunning 10 steps with planning policy...")
-    episode_result = run_episode(vis_agent, planning_policy, 10,
+    print("\nRunning 100 steps with planning policy...")
+    episode_result = run_episode(vis_agent, planning_policy, 100,
                                  collision_penalty=collision_penalty, verbose=True)
 
-    print(f"\nFinal state after 10 steps:")
+    print(f"\nFinal state after 100 steps:")
     print_estimates(vis_agent)
     print(f"Episode total reward: {episode_result['total_reward']:.4f}")
     print(f"Episode collisions: {episode_result['collisions']}")
 
     visualize_grid(vis_agent)
+    visualize_likelihood(vis_agent.pos_belief)
+    visualize_likelihood(vis_agent.landmarks_belief)
