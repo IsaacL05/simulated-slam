@@ -189,3 +189,31 @@ if __name__ == "__main__":
     visualize_grid(vis_agent)
     visualize_likelihood(vis_agent.pos_belief/100)
     visualize_likelihood(vis_agent.landmarks_belief/100)
+
+    # Visualize a single episode with random policy
+    print("\n" + "="*70)
+    print("Running single episode with RANDOM POLICY for visualization...")
+    print("="*70)
+
+    random_agent = agent(landmarks, start_pos, p_lidar_off,
+                        num_rollouts=planning_params['num_rollouts'],
+                        horizon=planning_params['horizon'],
+                        gamma=planning_params['gamma'])
+
+    print("\nInitial state:")
+    visualize_grid(random_agent)
+    print_estimates(random_agent)
+    print(f"Initial reward: {random_agent.reward(collision_penalty)}")
+
+    print("\nRunning 100 steps with random policy...")
+    episode_result_random = run_episode(random_agent, random_policy, 100,
+                                       collision_penalty=collision_penalty, verbose=True)
+
+    print(f"\nFinal state after 100 steps:")
+    print_estimates(random_agent)
+    print(f"Episode total reward: {episode_result_random['total_reward']:.4f}")
+    print(f"Episode collisions: {episode_result_random['collisions']}")
+
+    visualize_grid(random_agent)
+    visualize_likelihood(random_agent.pos_belief/100)
+    visualize_likelihood(random_agent.landmarks_belief/100)

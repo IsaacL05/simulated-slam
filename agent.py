@@ -542,10 +542,10 @@ class agent():
                 if ruled_out:
                     likelihood[l_row, l_col] = 0.0
                 else:
-                    # For all states for which their is no evidence either way, we give them a probability 1
-                    # Landmarks that never receive positive support fall back to this
-                    # neutral baseline, ensuring they stay in play for future updates.
-                    likelihood[l_row, l_col] = cumulative_support if cumulative_support > 0.0 else 1.0
+                    # If we have positive evidence, use it. If not, use a small value to
+                    # gradually reduce belief at locations without supporting evidence.
+                    # This allows the belief to concentrate at locations with positive detections.
+                    likelihood[l_row, l_col] = cumulative_support if cumulative_support > 0.0 else 0.8
         # A landmark cannot be at the same location as the agent
         likelihood[state[0], state[1]] = 0.0
         return likelihood
