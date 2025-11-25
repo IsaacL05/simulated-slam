@@ -2,7 +2,7 @@ import numpy as np
 
 # Class representing an autonomous agent in a 2D grid world
 class agent():
-    def __init__(self, landmarks, start_pos, p_lidar_off, num_rollouts=10, horizon=10, gamma=0.95):
+    def __init__(self, landmarks, start_pos, p_lidar_off=0.1, belief_decay=0.8, num_rollouts=10, horizon=10, gamma=0.95):
         # Create a 10x10 grid world of all zeros (empty cells)
         self.map = np.zeros((10, 10), dtype=int)
 
@@ -31,6 +31,9 @@ class agent():
 
         # Probability that observation from Lidar measurements is 1 tile off (each direction)
         self.p_lidar_off = p_lidar_off
+
+        # Belief decay factor at a location without supporting evidence
+        self.belief_decay = belief_decay
 
         # Track if the last action resulted in a collision
         self.collision_occurred = False
@@ -458,8 +461,7 @@ class agent():
 
             # Spread the detection's mass across the reported cell and its ±1
             # neighbors to represent range noise. Landmarks further down the ray
-            # become "uninformative" (weight 1.0) so that detecting a nearer
-            # landmark does not automatically eliminate them.
+            # are beyond detection range, so we have no evidence (weight belief_decay).
             prob_correct = 1.0 - 2.0 * self.p_lidar_off
             prob_minus = self.p_lidar_off
             prob_plus = self.p_lidar_off
@@ -480,7 +482,7 @@ class agent():
             if true_distance < distance - 1:
                 return 0.0
             if true_distance > distance + 1:
-                return 1.0
+                return self.belief_decay
             if landmark == expected:
                 return prob_correct
             if prob_minus > 0.0 and landmark == minus_cell:
@@ -500,7 +502,8 @@ class agent():
                 # The beam reported empty space up to `distance`; any landmark that
                 # would have appeared before that distance is inconsistent.
                 return 0.0
-            return 1.0
+            # Landmark is beyond the detected empty space; we have no evidence about it.
+            return self.belief_decay
 
     def _compute_landmark_likelihood(self, observations, state):
         """
@@ -545,7 +548,7 @@ class agent():
                     # If we have positive evidence, use it. If not, use a small value to
                     # gradually reduce belief at locations without supporting evidence.
                     # This allows the belief to concentrate at locations with positive detections.
-                    likelihood[l_row, l_col] = cumulative_support if cumulative_support > 0.0 else 0.8
+                    likelihood[l_row, l_col] = cumulative_support if cumulative_support > 0.0 else self.belief_decay
         # A landmark cannot be at the same location as the agent
         likelihood[state[0], state[1]] = 0.0
         return likelihood

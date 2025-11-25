@@ -118,6 +118,7 @@ if __name__ == "__main__":
     valid_positions = [(r, c) for r in range(10) for c in range(10) if (r, c) not in landmarks]
     start_pos = tuple(valid_positions[np.random.randint(len(valid_positions))])
     p_lidar_off = 0.1
+    belief_decay = 0.8
 
     # Planning hyperparameters
     planning_params = {
@@ -137,6 +138,7 @@ if __name__ == "__main__":
     print(f"  Landmarks: {landmarks}")
     print(f"  Start position: {start_pos}")
     print(f"  Lidar noise: {p_lidar_off}")
+    print(f"  Belief decay factor: {belief_decay}")
     print(f"\nPlanning parameters:")
     print(f"  Rollouts: {planning_params['num_rollouts']}")
     print(f"  Horizon: {planning_params['horizon']}")
@@ -152,6 +154,7 @@ if __name__ == "__main__":
         landmarks=landmarks,
         start_pos=start_pos,
         p_lidar_off=p_lidar_off,
+        belief_decay=belief_decay,
         num_steps=num_steps,
         num_trials=num_trials,
         planning_params=planning_params,
@@ -167,7 +170,7 @@ if __name__ == "__main__":
     print("Running single episode with PLANNING POLICY for visualization...")
     print("="*70)
 
-    vis_agent = agent(landmarks, start_pos, p_lidar_off,
+    vis_agent = agent(landmarks, start_pos, p_lidar_off, belief_decay,
                      num_rollouts=planning_params['num_rollouts'],
                      horizon=planning_params['horizon'],
                      gamma=planning_params['gamma'])
@@ -195,7 +198,7 @@ if __name__ == "__main__":
     print("Running single episode with RANDOM POLICY for visualization...")
     print("="*70)
 
-    random_agent = agent(landmarks, start_pos, p_lidar_off,
+    random_agent = agent(landmarks, start_pos, p_lidar_off, belief_decay,
                         num_rollouts=planning_params['num_rollouts'],
                         horizon=planning_params['horizon'],
                         gamma=planning_params['gamma'])

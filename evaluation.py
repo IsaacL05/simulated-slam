@@ -66,7 +66,7 @@ def run_episode(agent, policy_fn, num_steps, collision_penalty=1.0, verbose=Fals
     }
 
 
-def compare_policies(landmarks, start_pos, p_lidar_off, num_steps,
+def compare_policies(landmarks, start_pos, p_lidar_off=0.1, belief_decay=0.8, num_steps=100,
                      num_trials=5, planning_params=None, collision_penalty=1.0,
                      verbose=False):
     """
@@ -92,7 +92,7 @@ def compare_policies(landmarks, start_pos, p_lidar_off, num_steps,
         # Run planning policy
         if verbose:
             print(f"\n--- Planning Policy ---")
-        planning_agent = agent(landmarks, start_pos, p_lidar_off,
+        planning_agent = agent(landmarks, start_pos, p_lidar_off, belief_decay,
                               num_rollouts=planning_params['num_rollouts'],
                               horizon=planning_params['horizon'],
                               gamma=planning_params['gamma'])
@@ -103,7 +103,7 @@ def compare_policies(landmarks, start_pos, p_lidar_off, num_steps,
         # Run random policy
         if verbose:
             print(f"\n--- Random Policy ---")
-        random_agent = agent(landmarks, start_pos, p_lidar_off,
+        random_agent = agent(landmarks, start_pos, p_lidar_off, belief_decay,
                            num_rollouts=1, horizon=1, gamma=0.95)  # Dummy params for random
         random_result = run_episode(random_agent, random_policy, num_steps,
                                    collision_penalty, verbose=verbose)
