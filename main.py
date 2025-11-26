@@ -129,43 +129,42 @@ if __name__ == "__main__":
 
     collision_penalty = 1.0
     num_steps = 100
-    num_trials = 3
+    # num_trials = 3
 
-    print("="*70)
-    print("SLAM POLICY COMPARISON")
-    print("="*70)
-    print(f"\nEnvironment:")
-    print(f"  Landmarks: {landmarks}")
-    print(f"  Start position: {start_pos}")
-    print(f"  Lidar noise: {p_lidar_off}")
-    print(f"  Belief decay factor: {belief_decay}")
-    print(f"\nPlanning parameters:")
-    print(f"  Rollouts: {planning_params['num_rollouts']}")
-    print(f"  Horizon: {planning_params['horizon']}")
-    print(f"  Gamma: {planning_params['gamma']}")
-    print(f"\nEvaluation:")
-    print(f"  Steps per episode: {num_steps}")
-    print(f"  Number of trials: {num_trials}")
-    print(f"  Collision penalty: {collision_penalty}")
+    # print("="*70)
+    # print("SLAM POLICY COMPARISON")
+    # print("="*70)
+    # print(f"\nEnvironment:")
+    # print(f"  Landmarks: {landmarks}")
+    # print(f"  Start position: {start_pos}")
+    # print(f"  Lidar noise: {p_lidar_off}")
+    # print(f"  Belief decay factor: {belief_decay}")
+    # print(f"\nPlanning parameters:")
+    # print(f"  Rollouts: {planning_params['num_rollouts']}")
+    # print(f"  Horizon: {planning_params['horizon']}")
+    # print(f"  Gamma: {planning_params['gamma']}")
+    # print(f"\nEvaluation:")
+    # print(f"  Steps per episode: {num_steps}")
+    # print(f"  Number of trials: {num_trials}")
+    # print(f"  Collision penalty: {collision_penalty}")
 
-    # Run comparison
-    print("\nRunning comparison...")
-    results = compare_policies(
-        landmarks=landmarks,
-        start_pos=start_pos,
-        p_lidar_off=p_lidar_off,
-        belief_decay=belief_decay,
-        num_steps=num_steps,
-        num_trials=num_trials,
-        planning_params=planning_params,
-        collision_penalty=collision_penalty,
-        verbose=False
-    )
+    # # Run comparison
+    # print("\nRunning comparison...")
+    # results = compare_policies(
+    #     landmarks=landmarks,
+    #     start_pos=start_pos,
+    #     p_lidar_off=p_lidar_off,
+    #     belief_decay=belief_decay,
+    #     num_steps=num_steps,
+    #     num_trials=num_trials,
+    #     planning_params=planning_params,
+    #     collision_penalty=collision_penalty,
+    #     verbose=False
+    # )
 
-    # Print results
-    print_comparison(results)
+    # # Print results
+    # print_comparison(results)
 
-    # Optional: Visualize a single episode with planning
     print("\n" + "="*70)
     print("Running single episode with PLANNING POLICY for visualization...")
     print("="*70)
@@ -188,6 +187,8 @@ if __name__ == "__main__":
     print_estimates(vis_agent)
     print(f"Episode total reward: {episode_result['total_reward']:.4f}")
     print(f"Episode collisions: {episode_result['collisions']}")
+    print(f"Final position error: {episode_result['final_pos_error']}")
+    print(f"Final landmark errors: {episode_result['final_landmark_error']}")
 
     visualize_grid(vis_agent)
     visualize_likelihood(vis_agent.pos_belief/100)
@@ -216,6 +217,8 @@ if __name__ == "__main__":
     print_estimates(random_agent)
     print(f"Episode total reward: {episode_result_random['total_reward']:.4f}")
     print(f"Episode collisions: {episode_result_random['collisions']}")
+    print(f"Final position error: {episode_result_random['final_pos_error']}")
+    print(f"Final landmark errors: {episode_result_random['final_landmark_error']}")
 
     visualize_grid(random_agent)
     visualize_likelihood(random_agent.pos_belief/100)
